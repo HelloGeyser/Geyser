@@ -229,7 +229,6 @@ public class PlayerEntity extends LivingEntity {
     @Override
     public void setPosition(Vector3f position) {
         this.position = position.add(0, entityType.getOffset(), 0);
-        updateBoundingBox(position);
     }
 
     @Override
