@@ -52,10 +52,7 @@ public class SkinUtils {
         GameProfileData data = GameProfileData.from(profile);
         SkinProvider.Cape cape = SkinProvider.getCachedCape(data.getCapeUrl());
 
-        SkinProvider.SkinGeometry geometry = playerEntity.getGeometry();
-        if (geometry == null) {
-            geometry = SkinProvider.SkinGeometry.getLegacy(data.isAlex());
-        }
+        SkinProvider.SkinGeometry geometry = SkinProvider.SkinGeometry.getLegacy(data.isAlex());
 
         SkinProvider.Skin skin = SkinProvider.getCachedSkin(data.getSkinUrl());
         if (skin == null) {
