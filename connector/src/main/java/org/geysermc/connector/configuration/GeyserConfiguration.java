@@ -35,7 +35,7 @@ import java.util.Map;
 public interface GeyserConfiguration {
 
     // Modify this when you update the config
-    int CURRENT_CONFIG_VERSION = 4;
+    int CURRENT_CONFIG_VERSION = 5;
 
     IBedrockConfiguration getBedrock();
 
@@ -78,10 +78,10 @@ public interface GeyserConfiguration {
     boolean isAboveBedrockNetherBuilding();
 
     boolean isCacheChunks();
+    
+    boolean isAllowCustomSkulls();
 
     boolean isForceResourcePacks();
-
-    boolean isAllowCustomSkulls();
 
     int getCacheImages();
 

@@ -51,11 +51,14 @@ import com.nukkitx.protocol.bedrock.data.*;
 import com.nukkitx.protocol.bedrock.data.command.CommandPermission;
 import com.nukkitx.protocol.bedrock.data.entity.EntityFlag;
 import com.nukkitx.protocol.bedrock.packet.*;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMaps;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2LongMap;
 import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
+import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import lombok.Getter;
 import lombok.Setter;
 import org.geysermc.common.window.CustomFormWindow;
@@ -122,9 +125,8 @@ public class GeyserSession implements CommandSender {
     private InventoryCache inventoryCache;
     private WorldCache worldCache;
     private WindowCache windowCache;
-    private Map<Position, PlayerEntity> skullCache = new ConcurrentHashMap<>();
-    @Setter
-    private TeleportCache teleportCache;
+	private Map<Position, PlayerEntity> skullCache = new ConcurrentHashMap<>();
+    private final Int2ObjectMap<TeleportCache> teleportMap = new Int2ObjectOpenHashMap<>();
 
     @Getter
     private final Long2ObjectMap<ClientboundMapItemDataPacket> storedMaps = Long2ObjectMaps.synchronize(new Long2ObjectOpenHashMap<>());
@@ -139,7 +141,13 @@ public class GeyserSession implements CommandSender {
 
     @Setter
     private Vector2i lastChunkPosition = null;
-    private int renderDistance;
+
+    // This is used to store the render distance sent by the Java server so we can use it to update the client accordingly
+    private int serverRenderDistance;
+
+    // This is the bedrock client equivalent of the above `serverRenderDistance`
+    @Setter
+    private int clientRenderDistance;
 
     private boolean loggedIn;
     private boolean loggingIn;
@@ -614,14 +622,24 @@ public class GeyserSession implements CommandSender {
         windowCache.showWindow(window, id);
     }
 
-    public void setRenderDistance(int renderDistance) {
-        renderDistance = GenericMath.ceil(++renderDistance * MathUtils.SQRT_OF_TWO); //square to circle
-        if (renderDistance > 32) renderDistance = 32; // <3 u ViaVersion but I don't like crashing clients x)
-        this.renderDistance = renderDistance;
+    public void setServerRenderDistance(int serverRenderDistance) {
+        serverRenderDistance = GenericMath.ceil(++serverRenderDistance * MathUtils.SQRT_OF_TWO); //square to circle
+        if (serverRenderDistance > 32) serverRenderDistance = 32; // <3 u ViaVersion but I don't like crashing clients x)
+        this.serverRenderDistance = serverRenderDistance;
 
         ChunkRadiusUpdatedPacket chunkRadiusUpdatedPacket = new ChunkRadiusUpdatedPacket();
-        chunkRadiusUpdatedPacket.setRadius(renderDistance);
-        sendUpstreamPacket(chunkRadiusUpdatedPacket);
+
+        chunkRadiusUpdatedPacket.setRadius(getRenderDistance());
+        upstream.sendPacket(chunkRadiusUpdatedPacket);
+    }
+
+    /**
+     * This returns the smallest render distance between the server or client
+     *
+     * @return The render distance as an int
+     */
+    public int getRenderDistance() {
+        return Math.min(clientRenderDistance, serverRenderDistance);
     }
 
     public InetSocketAddress getSocketAddress() {
@@ -686,18 +704,57 @@ public class GeyserSession implements CommandSender {
         sendUpstreamPacket(startGamePacket);
     }
 
+    public void addTeleport(TeleportCache teleportCache) {
+        teleportMap.put(teleportCache.getTeleportConfirmId(), teleportCache);
+    }
+
     public boolean confirmTeleport(Vector3d position) {
-        if (teleportCache != null) {
-            if (!teleportCache.canConfirm(position)) {
-                GeyserConnector.getInstance().getLogger().debug("Unconfirmed Teleport " + teleportCache.getTeleportConfirmId()
-                        + " Ignore movement " + position + " expected " + teleportCache);
-                return false;
+        int teleportID = -1;
+
+        for (Int2ObjectMap.Entry<TeleportCache> entry : teleportMap.int2ObjectEntrySet()) {
+            if (entry.getValue().canConfirm(position)) {
+                if (entry.getValue().getTeleportConfirmId() > teleportID) {
+                    teleportID = entry.getValue().getTeleportConfirmId();
+                }
             }
-            int teleportId = teleportCache.getTeleportConfirmId();
-            teleportCache = null;
-            ClientTeleportConfirmPacket teleportConfirmPacket = new ClientTeleportConfirmPacket(teleportId);
-            sendDownstreamPacket(teleportConfirmPacket);
         }
+
+        ObjectIterator<Int2ObjectMap.Entry<TeleportCache>> it = teleportMap.int2ObjectEntrySet().iterator();
+
+        if (teleportID != -1) {
+            // Confirm the current teleport and any earlier ones
+            // TODO: Don't assume that IDs go up over time
+            while (it.hasNext()) {
+                Int2ObjectMap.Entry<TeleportCache> entry = it.next();
+                int nextID = entry.getValue().getTeleportConfirmId();
+                if (nextID <= teleportID) {
+                    ClientTeleportConfirmPacket teleportConfirmPacket = new ClientTeleportConfirmPacket(nextID);
+                    sendDownstreamPacket(teleportConfirmPacket);
+                    it.remove();
+                    connector.getLogger().debug("Confirmed teleport " + nextID);
+                }
+            }
+        }
+
+        if (teleportMap.size() > 0) {
+            int resendID = -1;
+            for (Int2ObjectMap.Entry<TeleportCache> entry : teleportMap.int2ObjectEntrySet()) {
+                TeleportCache teleport = entry.getValue();
+                teleport.incrementUnconfirmedFor();
+                if (teleport.shouldResend()) {
+                    if (teleport.getTeleportConfirmId() >= resendID) {
+                        resendID = teleport.getTeleportConfirmId();
+                    }
+                }
+            }
+
+            if (resendID != -1) {
+                connector.getLogger().debug("Resending teleport " + resendID);
+                TeleportCache teleport = teleportMap.get(resendID);
+                getPlayerEntity().moveAbsolute(this, Vector3f.from(teleport.getX(), teleport.getY(), teleport.getZ()), (float) teleport.getYaw(), (float) teleport.getPitch(), true, true);
+            }
+        }
+
         return true;
     }
 
@@ -738,7 +795,7 @@ public class GeyserSession implements CommandSender {
 
     /**
      * Send a packet immediately to the player.
-     * 
+     *
      * @param packet the bedrock packet from the NukkitX protocol lib
      */
     public void sendUpstreamPacketImmediately(BedrockPacket packet) {

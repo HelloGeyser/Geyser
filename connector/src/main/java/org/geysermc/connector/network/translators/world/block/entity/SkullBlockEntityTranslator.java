@@ -69,6 +69,7 @@ public class SkullBlockEntityTranslator extends BlockEntityTranslator implements
     }
 
     public static GameProfile getProfile(CompoundTag tag, GeyserSession session) {
+
         if (tag.contains("SkullOwner")) {
             CompoundTag owner = tag.get("SkullOwner");
             CompoundTag Properties = owner.get("Properties");

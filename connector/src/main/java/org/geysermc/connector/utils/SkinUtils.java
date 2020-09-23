@@ -52,12 +52,10 @@ public class SkinUtils {
 
     public static PlayerListPacket.Entry buildCachedEntry(GeyserSession session, PlayerEntity playerEntity) {
         GameProfileData data = GameProfileData.from(playerEntity.getProfile());
+
         SkinProvider.Cape cape = SkinProvider.getCachedCape(data.getCapeUrl());
 
-        SkinProvider.SkinGeometry geometry = playerEntity.getGeometry();
-        if (geometry == null) {
-            geometry = SkinProvider.SkinGeometry.getLegacy(data.isAlex());
-        }
+        SkinProvider.SkinGeometry geometry = SkinProvider.SkinGeometry.getLegacy(data.isAlex());
 
         SkinProvider.Skin skin = SkinProvider.getCachedSkin(data.getSkinUrl());
         if (skin == null) {
@@ -210,7 +208,6 @@ public class SkinUtils {
                             geometry = SkinProvider.getOrDefault(SkinProvider.requestBedrockGeometry(
                                     geometry, entity.getUuid(), false
                             ), geometry, 3);
-
 
                             // Not a bedrock player check for ears
                             if (geometry.isFailed() && SkinProvider.ALLOW_THIRD_PARTY_EARS) {
