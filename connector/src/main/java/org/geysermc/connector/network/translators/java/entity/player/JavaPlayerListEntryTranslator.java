@@ -30,6 +30,7 @@ import org.geysermc.connector.entity.PlayerEntity;
 import org.geysermc.connector.network.session.GeyserSession;
 import org.geysermc.connector.network.translators.PacketTranslator;
 import org.geysermc.connector.network.translators.Translator;
+import org.geysermc.connector.utils.MessageUtils;
 import org.geysermc.connector.utils.SkinUtils;
 
 import com.github.steveice10.mc.protocol.data.game.PlayerListEntry;
@@ -80,9 +81,9 @@ public class JavaPlayerListEntryTranslator extends PacketTranslator<ServerPlayer
 
                     playerEntity.setProfile(entry.getProfile());
                     playerEntity.setPlayerList(true);
-                    playerEntity.setValid(true);
+                    playerEntity.setDisplayName(entry.getDisplayName() != null ? MessageUtils.getTranslatedBedrockMessage(entry.getDisplayName(), session.getClientData().getLanguageCode()) : null);
 
-                    PlayerListPacket.Entry playerListEntry = SkinUtils.buildCachedEntry(session, entry.getProfile(), playerEntity.getGeyserId());
+                    PlayerListPacket.Entry playerListEntry = SkinUtils.buildCachedEntry(session, playerEntity);
 
                     translate.getEntries().add(playerListEntry);
                     break;
@@ -105,8 +106,8 @@ public class JavaPlayerListEntryTranslator extends PacketTranslator<ServerPlayer
             }
         }
 
-        if (packet.getAction() == PlayerListEntryAction.REMOVE_PLAYER || session.getUpstream().isInitialized()) {
+//        if (packet.getAction() == PlayerListEntryAction.REMOVE_PLAYER || session.getUpstream().isInitialized()) {
             session.sendUpstreamPacket(translate);
-        }
+//        }
     }
 }

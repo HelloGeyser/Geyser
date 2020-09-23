@@ -35,10 +35,13 @@ import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import org.geysermc.connector.GeyserConnector;
+import org.geysermc.connector.event.EventManager;
+import org.geysermc.connector.event.events.registry.BlockEntityRegistryEvent;
 import org.geysermc.connector.network.translators.world.block.entity.BlockEntity;
 import org.geysermc.connector.utils.FileUtils;
 import org.reflections.Reflections;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
 
@@ -47,21 +50,21 @@ public class BlockTranslator {
     public static final int AIR = 0;
     public static final int BEDROCK_WATER_ID;
 
-    private static final Int2IntMap JAVA_TO_BEDROCK_BLOCK_MAP = new Int2IntOpenHashMap();
-    private static final Int2IntMap BEDROCK_TO_JAVA_BLOCK_MAP = new Int2IntOpenHashMap();
+    public static final Int2IntMap JAVA_TO_BEDROCK_BLOCK_MAP = new Int2IntOpenHashMap();
+    public static final Int2IntMap BEDROCK_TO_JAVA_BLOCK_MAP = new Int2IntOpenHashMap();
     /**
      * Stores a list of differences in block identifiers.
      * Items will not be added to this list if the key and value is the same.
      */
-    private static final Object2ObjectMap<String, String> JAVA_TO_BEDROCK_IDENTIFIERS = new Object2ObjectOpenHashMap<>();
-    private static final BiMap<String, Integer> JAVA_ID_BLOCK_MAP = HashBiMap.create();
-    private static final IntSet WATERLOGGED = new IntOpenHashSet();
-    private static final Object2IntMap<NbtMap> ITEM_FRAMES = new Object2IntOpenHashMap<>();
+    public static final Object2ObjectMap<String, String> JAVA_TO_BEDROCK_IDENTIFIERS = new Object2ObjectOpenHashMap<>();
+    public static final BiMap<String, Integer> JAVA_ID_BLOCK_MAP = HashBiMap.create();
+    public static final IntSet WATERLOGGED = new IntOpenHashSet();
+    public static final Object2IntMap<NbtMap> ITEM_FRAMES = new Object2IntOpenHashMap<>();
 
     // Bedrock carpet ID, used in LlamaEntity.java for decoration
     public static final int CARPET = 171;
 
-    private static final Int2ObjectMap<String> JAVA_ID_TO_BLOCK_ENTITY_MAP = new Int2ObjectOpenHashMap<>();
+    public static final Int2ObjectMap<String> JAVA_ID_TO_BLOCK_ENTITY_MAP = new Int2ObjectOpenHashMap<>();
 
     public static final Int2DoubleMap JAVA_RUNTIME_ID_TO_HARDNESS = new Int2DoubleOpenHashMap();
     public static final Int2BooleanMap JAVA_RUNTIME_ID_TO_CAN_HARVEST_WITH_HAND = new Int2BooleanOpenHashMap();
@@ -81,7 +84,7 @@ public class BlockTranslator {
 
     public static final int JAVA_RUNTIME_SPAWNER_ID;
 
-    private static final int BLOCK_STATE_VERSION = 17825806;
+    public static final int BLOCK_STATE_VERSION = 17825806;
 
     static {
         /* Load block palette */
@@ -109,12 +112,21 @@ public class BlockTranslator {
         } catch (Exception e) {
             throw new AssertionError("Unable to load Java block mappings", e);
         }
+
+        // Load Block Overrides
+        JsonNode blocksOverride = null;
+        try (InputStream is = FileUtils.getResource("overrides/blocks.json")) {
+            blocksOverride = GeyserConnector.JSON_MAPPER.readTree(is);
+        } catch (IOException | AssertionError ignored) { }
+
         Object2IntMap<NbtMap> addedStatesMap = new Object2IntOpenHashMap<>();
         addedStatesMap.defaultReturnValue(-1);
         List<NbtMap> paletteList = new ArrayList<>();
 
         Reflections ref = GeyserConnector.getInstance().isProduction() ? FileUtils.getReflections("org.geysermc.connector.network.translators.world.block.entity") : new Reflections("org.geysermc.connector.network.translators.world.block.entity");
-        ref.getTypesAnnotatedWith(BlockEntity.class);
+        Set<Class<?>> blockEntityClasses = EventManager.getInstance().triggerEvent(new BlockEntityRegistryEvent(
+                ref.getTypesAnnotatedWith(BlockEntity.class)
+        )).getEvent().getRegisteredTranslators();
 
         int waterRuntimeId = -1;
         int javaRuntimeId = -1;
@@ -129,6 +141,12 @@ public class BlockTranslator {
             javaRuntimeId++;
             Map.Entry<String, JsonNode> entry = blocksIterator.next();
             String javaId = entry.getKey();
+
+            // Check for an override
+            if (blocksOverride != null && blocksOverride.has(javaId)) {
+                entry = new AbstractMap.SimpleEntry<>(javaId, blocksOverride.get(javaId));
+            }
+
             NbtMap blockTag = buildBedrockState(entry.getValue());
 
             // TODO fix this, (no block should have a null hardness)
@@ -153,7 +171,7 @@ public class BlockTranslator {
             // Used for adding all "special" Java block states to block state map
             String identifier;
             String bedrockIdentifier = entry.getValue().get("bedrock_identifier").asText();
-            for (Class<?> clazz : ref.getTypesAnnotatedWith(BlockEntity.class)) {
+            for (Class<?> clazz : blockEntityClasses) {
                 identifier = clazz.getAnnotation(BlockEntity.class).regex();
                 // Endswith, or else the block bedrock gets picked up for bed
                 if (bedrockIdentifier.endsWith(identifier) && !identifier.equals("")) {
@@ -173,6 +191,11 @@ public class BlockTranslator {
             // Get the tag needed for non-empty flower pots
             if (entry.getValue().get("pottable") != null) {
                 BlockStateValues.getFlowerPotBlocks().put(cleanJavaIdentifier, buildBedrockState(entry.getValue()));
+            }
+
+            if (entry.getKey().contains("wall_skull") || entry.getKey().contains("wall_head")) {
+                String direction = entry.getKey().substring(entry.getKey().lastIndexOf("facing=") + 7);
+                BlockStateValues.getWallSkullDirection().put(javaRuntimeId, direction.substring(0, direction.length() - 1));
             }
 
             if ("minecraft:water[level=0]".equals(javaId)) {
