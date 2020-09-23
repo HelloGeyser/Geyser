@@ -52,7 +52,7 @@ public class SkinUtils {
 
     public static PlayerListPacket.Entry buildCachedEntry(GeyserSession session, PlayerEntity playerEntity) {
         GameProfileData data = GameProfileData.from(playerEntity.getProfile());
-
+        
         SkinProvider.Cape cape = SkinProvider.getCachedCape(data.getCapeUrl());
 
         SkinProvider.SkinGeometry geometry = SkinProvider.SkinGeometry.getLegacy(data.isAlex());
