@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       name:
-        description: 'Build lol'
+        description: 'Buildlol'
         required: true
-        default: 'Build lol'
+        default: 'Buildlol'
       home:
-        description: 'location lol'
+        description: 'locationlol'
         required: false
 
 jobs:
