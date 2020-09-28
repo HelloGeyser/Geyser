@@ -72,8 +72,7 @@ public class JavaPlayerListEntryTranslator extends PacketTranslator<ServerPlayer
                                 session.getEntityCache().getNextEntityId().incrementAndGet(),
                                 Vector3f.ZERO,
                                 Vector3f.ZERO,
-                                Vector3f.ZERO,
-                                session
+                                Vector3f.ZERO
                         );
                     }
 
@@ -82,7 +81,7 @@ public class JavaPlayerListEntryTranslator extends PacketTranslator<ServerPlayer
                     playerEntity.setProfile(entry.getProfile());
                     playerEntity.setPlayerList(true);
 
-                    PlayerListPacket.Entry playerListEntry = SkinUtils.buildCachedEntry(session, playerEntity);
+                    PlayerListPacket.Entry playerListEntry = SkinUtils.buildCachedEntry(session, entry.getProfile(), playerEntity.getGeyserId());
 
                     translate.getEntries().add(playerListEntry);
                     break;
@@ -105,10 +104,6 @@ public class JavaPlayerListEntryTranslator extends PacketTranslator<ServerPlayer
             }
         }
 
-        if (packet.getAction() == PlayerListEntryAction.REMOVE_PLAYER || session.getUpstream().isInitialized()) {
-            session.sendUpstreamPacket(translate);
-        }
-
-        session.start();
+        session.sendUpstreamPacket(translate);
     }
 }
