@@ -171,8 +171,8 @@ public class GeyserSession implements CommandSender {
     private boolean jumping;
 
     // TODO: Remove
-    // @Getter
-    // private BoundingBox playerBoundingBox;
+    @Getter
+    private BoundingBox playerBoundingBox;
 
     @Setter
     private int breakingBlock;
