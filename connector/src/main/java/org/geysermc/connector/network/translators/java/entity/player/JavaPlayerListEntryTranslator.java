@@ -72,7 +72,8 @@ public class JavaPlayerListEntryTranslator extends PacketTranslator<ServerPlayer
                                 session.getEntityCache().getNextEntityId().incrementAndGet(),
                                 Vector3f.ZERO,
                                 Vector3f.ZERO,
-                                Vector3f.ZERO
+                                Vector3f.ZERO,
+                                session
                         );
                     }
 
@@ -104,6 +105,10 @@ public class JavaPlayerListEntryTranslator extends PacketTranslator<ServerPlayer
             }
         }
 
-        session.sendUpstreamPacket(translate);
+        if (packet.getAction() == PlayerListEntryAction.REMOVE_PLAYER || session.getUpstream().isInitialized()) {
+            session.sendUpstreamPacket(translate);
+        }
+
+        session.start();
     }
 }
