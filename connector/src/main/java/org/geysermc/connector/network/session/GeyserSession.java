@@ -331,8 +331,14 @@ public class GeyserSession implements CommandSender {
     }
 
     public void connect(RemoteServer remoteServer) {
-        startGame();
         this.remoteServer = remoteServer;
+
+        PlayerListPacket playerListPacket = new PlayerListPacket();
+        playerListPacket.setAction(PlayerListPacket.Action.ADD);
+        playerListPacket.getEntries().add(SkinUtils.buildCachedEntry(this, playerEntity.getProfile(), playerEntity.getGeyserId()));
+        sendUpstreamPacket(playerListPacket);
+
+        startGame();
 
         ChunkUtils.sendEmptyChunks(this, playerEntity.getPosition().toInt(), 0, false);
 
@@ -488,6 +494,15 @@ public class GeyserSession implements CommandSender {
                                 registerPluginChannel(channel);
                             }
                         }, 1, TimeUnit.SECONDS);
+
+                        for (Entity entity : getEntityCache().getEntities().values()) {
+                            if (!entity.isValid()) {
+                                if (entity instanceof PlayerEntity) {
+                                    SkinUtils.requestAndHandleSkinAndCape((PlayerEntity) entity, GeyserSession.this, null);
+                                }
+                                entity.spawnEntity(GeyserSession.this);
+                            }
+                        }
                     }
 
                     @Override
