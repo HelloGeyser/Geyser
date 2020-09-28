@@ -74,9 +74,6 @@ public class PlayerEntity extends LivingEntity {
 
     private SkinProvider.SkinGeometry geometry;
 
-    private Entity leftParrot;
-    private Entity rightParrot;
-
     /**
      * Saves the parrot currently on the player's left shoulder; otherwise null
      */
