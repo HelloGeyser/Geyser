@@ -52,10 +52,6 @@ public class BedrockSetLocalPlayerAsInitializedTranslator extends PacketTranslat
                         SkinUtils.requestAndHandleSkinAndCape(entity, session, null);
                         entity.sendPlayer(session);
                     }
-                    if (entity.isPlayerList()) {
-                        PlayerListPacket.Entry entry = SkinUtils.buildCachedEntry(session, entry.getProfile(), playerEntity.getGeyserId());
-                        playerListPacket.getEntries().add(entry);
-                    }
                 }
 
                 // Send Skulls
