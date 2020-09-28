@@ -101,6 +101,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -124,9 +125,8 @@ public class GeyserSession implements CommandSender {
     private InventoryCache inventoryCache;
     private WorldCache worldCache;
     private WindowCache windowCache;
+	private Map<Position, PlayerEntity> skullCache = new ConcurrentHashMap<>();
     private final Int2ObjectMap<TeleportCache> teleportMap = new Int2ObjectOpenHashMap<>();
-    private Map<Position, PlayerEntity> skullCache = new ConcurrentHashMap<>();
-
 
     @Getter
     private final Long2ObjectMap<ClientboundMapItemDataPacket> storedMaps = Long2ObjectMaps.synchronize(new Long2ObjectOpenHashMap<>());
@@ -361,19 +361,19 @@ public class GeyserSession implements CommandSender {
     public void start() {
         if (!started) {
             started = true;
-            PlayerListPacket playerListPacket = new PlayerListPacket();
-			playerListPacket.setAction(PlayerListPacket.Action.ADD);
-			playerListPacket.getEntries().add(SkinUtils.buildCachedEntry(this, playerEntity.getProfile(), playerEntity.getGeyserId()));
-			sendUpstreamPacket(playerListPacket);
+            // Spawn the player
+			PlayStatusPacket playStatusPacket = new PlayStatusPacket();
+			playStatusPacket.setStatus(PlayStatusPacket.Status.PLAYER_SPAWN);
+			sendUpstreamPacket(playStatusPacket);
 
             UpdateAttributesPacket attributesPacket = new UpdateAttributesPacket();
-            attributesPacket.setRuntimeEntityId(getPlayerEntity().getGeyserId());
-            List<AttributeData> attributes = new ArrayList<>();
-            // Default move speed
-            // Bedrock clients move very fast by default until they get an attribute packet correcting the speed
-            attributes.add(new AttributeData("minecraft:movement", 0.0f, 1024f, 0.1f, 0.1f));
-            attributesPacket.setAttributes(attributes);
-            upstream.sendPacket(attributesPacket);
+			attributesPacket.setRuntimeEntityId(getPlayerEntity().getGeyserId());
+			List<AttributeData> attributes = new ArrayList<>();
+			// Default move speed
+			// Bedrock clients move very fast by default until they get an attribute packet correcting the speed
+			attributes.add(new AttributeData("minecraft:movement", 0.0f, 1024f, 0.1f, 0.1f));
+			attributesPacket.setAttributes(attributes);
+			sendUpstreamPacket(attributesPacket);	
         }
     }
 
@@ -930,5 +930,91 @@ public class GeyserSession implements CommandSender {
      */
     public void unregisterPluginChannel(String channel) {
         sendDownstreamPacket(new ClientPluginMessagePacket("minecraft:unregister", channel.getBytes()));
+	}
+
+	/**
+     * Updates the stored bounding box
+     * @param position The new position of the player
+     */
+    public void updatePlayerBoundingBox(Vector3f position) {
+        updatePlayerBoundingBox(Vector3d.from(position.getX(), position.getY(), position.getZ()));
+    }
+
+    /**
+     * Updates the stored bounding box
+     * @param position The new position of the player
+     */
+    public void updatePlayerBoundingBox(Vector3d position) {
+        if (playerBoundingBox == null) {
+            System.out.println("BBnull");
+            playerBoundingBox = new BoundingBox(position.getX(), position.getY() + 0.9, position.getZ(), 0.6, 1.8, 0.6);
+        } else {
+            // TODO: Make bounding box smaller when sneaking
+            playerBoundingBox.setMiddleX(position.getX());
+            playerBoundingBox.setMiddleY(position.getY() + 0.9); // (EntityType.PLAYER.getOffset() / 2));
+            // System.out.println("Offset: " + (EntityType.PLAYER.getOffset() / 2));
+            playerBoundingBox.setMiddleZ(position.getZ());
+        }
+    }
+
+    public static final double COLLISION_TOLERANCE = 0.000001; // TODO: Move?
+
+    public List<Vector3i> getPlayerCollidableBlocks() {
+        List<Vector3i> blocks = new ArrayList<>();
+
+        Vector3d position = Vector3d.from(playerBoundingBox.getMiddleX(),
+                playerBoundingBox.getMiddleY() - 0.9,
+                playerBoundingBox.getMiddleZ());
+
+        // Loop through all blocks that could collide with the player
+        int minCollisionX = (int) Math.floor(position.getX() - ((playerBoundingBox.getSizeX() / 2) + COLLISION_TOLERANCE));
+        int maxCollisionX = (int) Math.floor(position.getX() + (playerBoundingBox.getSizeX() / 2) + COLLISION_TOLERANCE);
+
+        // Y extends 0.5 blocks down because of fence hitboxes
+        int minCollisionY = (int) Math.floor(position.getY() - 0.5);
+
+        // TODO: change comment
+        // Hitbox height is currently set to 0.5 to improve performance, as only blocks below the player need checking
+        // Any lower seems to cause issues
+        int maxCollisionY = (int) Math.floor(position.getY() + playerBoundingBox.getSizeY());
+
+        int minCollisionZ = (int) Math.floor(position.getZ() - ((playerBoundingBox.getSizeZ() / 2) + COLLISION_TOLERANCE));
+        int maxCollisionZ = (int) Math.floor(position.getZ() + (playerBoundingBox.getSizeZ() / 2) + COLLISION_TOLERANCE);
+
+        // BlockCollision blockCollision;
+
+        for (int y = minCollisionY; y < maxCollisionY + 1; y++) {
+            for (int x = minCollisionX; x < maxCollisionX + 1; x++) {
+                for (int z = minCollisionZ; z < maxCollisionZ + 1; z++) {
+                    blocks.add(Vector3i.from(x, y, z));
+                }
+            }
+        }
+
+        return blocks;
+    }
+
+    public void correctPlayerPosition() {
+        List<Vector3i> collidableBlocks = getPlayerCollidableBlocks();
+
+        // Used when correction code needs to be run before the main correction
+        for (Vector3i blockPos : collidableBlocks) {
+            BlockCollision blockCollision = CollisionTranslator.getCollisionAt(
+                    blockPos.getX(), blockPos.getY(), blockPos.getZ(), this
+            );
+            if (blockCollision != null) {
+                blockCollision.beforeCorrectPosition(playerBoundingBox);
+            }
+        }
+
+        // Main correction code
+        for (Vector3i blockPos : collidableBlocks) {
+            BlockCollision blockCollision = CollisionTranslator.getCollisionAt(
+                    blockPos.getX(), blockPos.getY(), blockPos.getZ(), this
+            );
+            if (blockCollision != null) {
+                blockCollision.correctPosition(playerBoundingBox);
+            }
+        }
     }
 }
