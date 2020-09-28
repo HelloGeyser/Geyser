@@ -64,6 +64,7 @@ import org.geysermc.common.window.CustomFormWindow;
 import org.geysermc.common.window.FormWindow;
 import org.geysermc.connector.GeyserConnector;
 import org.geysermc.connector.command.CommandSender;
+import org.geysermc.connector.configuration.GeyserConfiguration;
 import org.geysermc.connector.common.AuthType;
 import org.geysermc.connector.entity.Entity;
 import org.geysermc.connector.entity.PlayerEntity;
@@ -144,9 +145,11 @@ public class GeyserSession implements CommandSender {
 
     private boolean loggedIn;
     private boolean loggingIn;
+    private boolean usingSavedCredentials;
 
     @Setter
     private boolean spawned;
+    private boolean started;
     private boolean closed;
 
     @Setter
@@ -314,6 +317,8 @@ public class GeyserSession implements CommandSender {
 
         this.spawned = false;
         this.loggedIn = false;
+        this.usingSavedCredentials = false;
+        this.started = false;
 
         this.inventoryCache.getInventories().put(0, inventory);
 
@@ -333,14 +338,47 @@ public class GeyserSession implements CommandSender {
     public void connect(RemoteServer remoteServer) {
         this.remoteServer = remoteServer;
 
-        PlayerListPacket playerListPacket = new PlayerListPacket();
-        playerListPacket.setAction(PlayerListPacket.Action.ADD);
-        playerListPacket.getEntries().add(SkinUtils.buildCachedEntry(this, playerEntity.getProfile(), playerEntity.getGeyserId()));
-        sendUpstreamPacket(playerListPacket);
+        if (connector.getAuthType() != AuthType.ONLINE) {
+            if (connector.getAuthType() == AuthType.OFFLINE) {
+                connector.getLogger().info(LanguageUtils.getLocaleStringLog("geyser.auth.login.offline"));
+            } else {
+                connector.getLogger().info(LanguageUtils.getLocaleStringLog("geyser.auth.login.floodgate"));
+            }
+            authenticate(authData.getName());
+        } else if (connector.getConfig().getUserAuths() != null && connector.getConfig().getUserAuths().containsKey(authData.getName())) {
+            connector.getLogger().info(LanguageUtils.getLocaleStringLog("geyser.auth.stored_credentials", getAuthData().getName()));
+            usingSavedCredentials = true;
+            GeyserConfiguration.IUserAuthenticationInfo info = connector.getConfig().getUserAuths().get(authData.getName());
+            authenticate(info.getEmail(), info.getPassword());
+        } else { // Show login form
+            playerEntity.setDimension(DimensionUtils.THE_END);
+            initialize();
+            ChunkUtils.sendEmptyChunks(this, playerEntity.getPosition().toInt(), 0, false);
+            start();
+        }
+    }
 
+    public void start() {
+        if (!started) {
+            started = true;
+            PlayerListPacket playerListPacket = new PlayerListPacket();
+			playerListPacket.setAction(PlayerListPacket.Action.ADD);
+			playerListPacket.getEntries().add(SkinUtils.buildCachedEntry(this, playerEntity.getProfile(), playerEntity.getGeyserId()));
+			sendUpstreamPacket(playerListPacket);
+
+            UpdateAttributesPacket attributesPacket = new UpdateAttributesPacket();
+            attributesPacket.setRuntimeEntityId(getPlayerEntity().getGeyserId());
+            List<AttributeData> attributes = new ArrayList<>();
+            // Default move speed
+            // Bedrock clients move very fast by default until they get an attribute packet correcting the speed
+            attributes.add(new AttributeData("minecraft:movement", 0.0f, 1024f, 0.1f, 0.1f));
+            attributesPacket.setAttributes(attributes);
+            upstream.sendPacket(attributesPacket);
+        }
+    }
+
+    public void initialize() {
         startGame();
-
-        ChunkUtils.sendEmptyChunks(this, playerEntity.getPosition().toInt(), 0, false);
 
         BiomeDefinitionListPacket biomeDefinitionListPacket = new BiomeDefinitionListPacket();
         biomeDefinitionListPacket.setDefinitions(BiomeTranslator.BIOMES);
@@ -354,20 +392,8 @@ public class GeyserSession implements CommandSender {
         creativePacket.setContents(ItemRegistry.CREATIVE_ITEMS);
         sendUpstreamPacket(creativePacket);
 
-        PlayStatusPacket playStatusPacket = new PlayStatusPacket();
-        playStatusPacket.setStatus(PlayStatusPacket.Status.PLAYER_SPAWN);
-        sendUpstreamPacket(playStatusPacket);
-
-        UpdateAttributesPacket attributesPacket = new UpdateAttributesPacket();
-        attributesPacket.setRuntimeEntityId(getPlayerEntity().getGeyserId());
-        List<AttributeData> attributes = new ArrayList<>();
-        // Default move speed
-        // Bedrock clients move very fast by default until they get an attribute packet correcting the speed
-        attributes.add(new AttributeData("minecraft:movement", 0.0f, 1024f, 0.1f, 0.1f));
-        attributesPacket.setAttributes(attributes);
-        sendUpstreamPacket(attributesPacket);
-
         GameRulesChangedPacket gamerulePacket = new GameRulesChangedPacket();
+
         // Only allow the server to send health information
         // Setting this to false allows natural regeneration to work false but doesn't break it being true
         gamerulePacket.getGameRules().add(new GameRuleData<>("naturalregeneration", false));
@@ -375,21 +401,6 @@ public class GeyserSession implements CommandSender {
         // Setting this to true allows keep inventory to work if enabled but doesn't break functionality being false
         gamerulePacket.getGameRules().add(new GameRuleData<>("keepinventory", true));
         sendUpstreamPacket(gamerulePacket);
-    }
-
-    public void login() {
-        if (EventManager.getInstance().triggerEvent(new GeyserLoginEvent(this)).isCancelled()) {
-            return;
-        }
-
-        if (connector.getAuthType() != AuthType.ONLINE) {
-            if (connector.getAuthType() == AuthType.OFFLINE) {
-                connector.getLogger().info(LanguageUtils.getLocaleStringLog("geyser.auth.login.offline"));
-            } else {
-                connector.getLogger().info(LanguageUtils.getLocaleStringLog("geyser.auth.login.floodgate"));
-            }
-            authenticate(authData.getName());
-        }
     }
 
     public void authenticate(String username) {
