@@ -51,7 +51,6 @@ import org.geysermc.connector.network.session.cache.EntityEffectCache;
 import org.geysermc.connector.scoreboard.Team;
 import org.geysermc.connector.utils.AttributeUtils;
 import org.geysermc.connector.utils.MessageUtils;
-import org.geysermc.connector.network.session.cache.EntityEffectCache;
 import org.geysermc.connector.utils.SkinProvider;
 import org.geysermc.connector.utils.SkinUtils;
 
@@ -69,10 +68,8 @@ public class PlayerEntity extends LivingEntity {
     private long lastSkinUpdate = -1;
     private boolean playerList = true;  // Player is in the player list
     private final EntityEffectCache effectCache;
-
-    private GeyserSession session;
-
-    private SkinProvider.SkinGeometry geometry;
+	
+	private SkinProvider.SkinGeometry geometry;
 
     /**
      * Saves the parrot currently on the player's left shoulder; otherwise null
@@ -83,20 +80,15 @@ public class PlayerEntity extends LivingEntity {
      */
     private ParrotEntity rightParrot;
 
-    public PlayerEntity(GameProfile gameProfile, long entityId, long geyserId, Vector3f position, Vector3f motion, Vector3f rotation, GeyserSession session) {
+    public PlayerEntity(GameProfile gameProfile, long entityId, long geyserId, Vector3f position, Vector3f motion, Vector3f rotation) {
         super(entityId, geyserId, EntityType.PLAYER, position, motion, rotation);
+
 
         profile = gameProfile;
         uuid = gameProfile.getId();
         username = gameProfile.getName();
         effectCache = new EntityEffectCache();
-
-        if (geyserId == 1) {
-            valid = true;
-            // We only need this for the logged in player
-            this.session = session;
-            session.getCollisionManager().updatePlayerBoundingBox(position);
-        }
+        if (geyserId == 1) valid = true;
     }
 
     @Override
@@ -132,26 +124,6 @@ public class PlayerEntity extends LivingEntity {
         updateBedrockAttributes(session);
     }
 
-    /**
-     * Add player to playerlist
-     */
-    public void addPlayerList(GeyserSession session) {
-        PlayerListPacket addPlayerListPacket = new PlayerListPacket();
-        addPlayerListPacket.setAction(PlayerListPacket.Action.ADD);
-        addPlayerListPacket.getEntries().add(SkinUtils.buildCachedEntry(this));
-        session.sendUpstreamPacket(addPlayerListPacket);
-    }
-
-    /**
-     * Remove player from playerlist
-     */
-    public void removePlayerList(GeyserSession session) {
-        PlayerListPacket removePlayerListPacket = new PlayerListPacket();
-        removePlayerListPacket.setAction(PlayerListPacket.Action.REMOVE);
-        removePlayerListPacket.getEntries().add(SkinUtils.buildCachedEntry(this));
-        session.sendUpstreamPacket(removePlayerListPacket);
-    }
-
     public void sendPlayer(GeyserSession session) {
         if (session.getEntityCache().getPlayerEntity(uuid) == null)
             return;
@@ -167,7 +139,7 @@ public class PlayerEntity extends LivingEntity {
     public void moveAbsolute(GeyserSession session, Vector3f position, Vector3f rotation, boolean isOnGround, boolean teleported) {
         // If this is the player logged in through this Geyser session
         if (geyserId == 1) {
-            session.getCollisionManager().updatePlayerBoundingBox(position);
+            session.updatePlayerBoundingBox(position);
         }
 
         setPosition(position);
@@ -202,7 +174,7 @@ public class PlayerEntity extends LivingEntity {
 
         // If this is the player logged in through this Geyser session
         if (geyserId == 1) {
-            session.getCollisionManager().updatePlayerBoundingBox(position);
+            session.updatePlayerBoundingBox(position);
         }
         setOnGround(isOnGround);
 
@@ -266,8 +238,8 @@ public class PlayerEntity extends LivingEntity {
     public void setPosition(Vector3f position) {
         this.position = position.add(0, entityType.getOffset(), 0);
         // If this is the player logged in through this Geyser session
-        if (geyserId == 1 && session != null) {
-            session.getCollisionManager().updatePlayerBoundingBox(position);
+        if (geyserId == 1) {
+            // session.updateBoundingBox(position); No way to access session... TODO: Fix!
         }
     }
 
