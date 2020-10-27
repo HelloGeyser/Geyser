@@ -33,11 +33,15 @@ import org.geysermc.connector.GeyserConnector;
 import org.reflections.Reflections;
 import org.reflections.serializers.XmlSerializer;
 import org.reflections.util.ConfigurationBuilder;
+import org.geysermc.connector.event.EventManager;
+import org.geysermc.connector.event.events.geyser.ResourceReadEvent;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Paths;
 import java.net.URL;
 import java.nio.file.Files;
 import java.security.MessageDigest;
@@ -151,11 +155,19 @@ public class FileUtils {
      * @return InputStream of the given resource
      */
     public static InputStream getResource(String resource) {
+        // First try open file under a resources folder. We use this try format so we don't close it
+        try {
+            return new FileInputStream(Paths.get("resources", resource).toFile());
+        } catch (IOException ignored) { }
+
         InputStream stream = FileUtils.class.getClassLoader().getResourceAsStream(resource);
-        if (stream == null) {
+
+        ResourceReadEvent event = EventManager.getInstance().triggerEvent(new ResourceReadEvent(resource, stream)).getEvent();
+
+        if (event.getInputStream() == null) {
             throw new AssertionError(LanguageUtils.getLocaleStringLog("geyser.toolbox.fail.resource", resource));
         }
-        return stream;
+        return event.getInputStream();
     }
 
     /**

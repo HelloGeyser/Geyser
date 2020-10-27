@@ -40,6 +40,7 @@ import com.nukkitx.nbt.NbtMap;
 import com.nukkitx.nbt.NbtUtils;
 import com.nukkitx.protocol.bedrock.packet.LevelChunkPacket;
 import com.nukkitx.protocol.bedrock.packet.NetworkChunkPublisherUpdatePacket;
+import com.nukkitx.protocol.bedrock.packet.RemoveEntityPacket;
 import com.nukkitx.protocol.bedrock.packet.UpdateBlockPacket;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntList;
@@ -56,6 +57,7 @@ import org.geysermc.connector.network.translators.world.block.BlockTranslator;
 import org.geysermc.connector.network.translators.world.block.entity.BedrockOnlyBlockEntity;
 import org.geysermc.connector.network.translators.world.block.entity.BlockEntityTranslator;
 import org.geysermc.connector.network.translators.world.block.entity.RequiresBlockState;
+import org.geysermc.connector.network.translators.world.block.entity.SkullBlockEntityTranslator;
 import org.geysermc.connector.network.translators.world.chunk.BlockStorage;
 import org.geysermc.connector.network.translators.world.chunk.ChunkSection;
 import org.geysermc.connector.network.translators.world.chunk.bitarray.BitArray;
@@ -267,6 +269,14 @@ public class ChunkUtils {
             }
 
             bedrockBlockEntities[i] = blockEntityTranslator.getBlockEntityTag(tagName, tag, blockState);
+
+            //Check for custom skulls
+            if (tag.contains("SkullOwner") && SkullBlockEntityTranslator.ALLOW_CUSTOM_SKULLS) {
+                CompoundTag owner = tag.get("SkullOwner");
+                if (owner.contains("Properties")) {
+                    SkullBlockEntityTranslator.spawnPlayer(session, tag, blockState);
+                }
+            }
             i++;
         }
 
@@ -310,6 +320,14 @@ public class ChunkUtils {
             } else {
                 ItemFrameEntity.removePosition(session, position);
             }
+        }
+
+        if (SkullBlockEntityTranslator.containsCustomSkull(new Position(position.getX(), position.getY(), position.getZ()), session) && blockState == AIR) {
+            Position skullPosition = new Position(position.getX(), position.getY(), position.getZ());
+            RemoveEntityPacket removeEntityPacket = new RemoveEntityPacket();
+            removeEntityPacket.setUniqueEntityId(session.getSkullCache().get(skullPosition).getGeyserId());
+            session.sendUpstreamPacket(removeEntityPacket);
+            session.getSkullCache().remove(skullPosition);
         }
 
         int blockId = BlockTranslator.getBedrockBlockId(blockState);

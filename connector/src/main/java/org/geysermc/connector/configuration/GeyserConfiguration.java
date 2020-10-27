@@ -81,6 +81,8 @@ public interface GeyserConfiguration {
 
     boolean isForceResourcePacks();
 
+    boolean isAllowCustomSkulls();
+
     int getCacheImages();
 
     IMetricsInfo getMetrics();
@@ -105,7 +107,7 @@ public interface GeyserConfiguration {
         String getAddress();
 
         int getPort();
-        
+
         void setAddress(String address);
 
         void setPort(int port);
